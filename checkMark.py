@@ -30,7 +30,7 @@ result = (1-result/np.max(result))*255
 M = np.float32([
 [1, 0, markerCenter[1]] ,
 [0, 1, markerCenter[0]] ])
-result = cv2.warpAffine(result, M, (width, height))
+resultPadded = cv2.warpAffine(result, M, (width, height))
 
 answer = [
 ['molding', 668, 115, 0],
@@ -50,8 +50,8 @@ guide = np.array([
 [29, 31], ])
 
 #landmark座標の読み取り
-scope = 25  #本来のguide点からのズレの許容範囲
-mask = np.zeros(result.shape)
+scope = 50  #本来のguide点からのズレの許容範囲
+mask = np.zeros(resultPadded.shape)
 
 for i in range(0, landmark.shape[0]):
     mask[:] = 0
@@ -60,34 +60,25 @@ for i in range(0, landmark.shape[0]):
     mask_yfr = max(0, guide[i,1]-(scope+markerCenter[1]))
     mask_yto = min(width, guide[i,1]+(scope+markerCenter[1]))
     mask[mask_xfr:mask_xto, mask_yfr:mask_yto] = 255
-    min_val, max_val, min_val, landmark[i,:] = cv2.minMaxLoc(np.multiply(result, mask))
+    min_val, max_val, min_val, landmark[i,:] = cv2.minMaxLoc(np.multiply(resultPadded, mask))
 
 landmark = np.take(landmark, [1,0], axis=1) #x,yが逆転しているのを直す
 
 
 #shift
-shift = landmark 
+shift = guide[0] - landmark[0] 
+M = np.float32([
+[1, 0, shift[1]] ,
+[0, 1, shift[0]] ])
+resultShifted = cv2.warpAffine(resultPadded, M, (width, height))
 
 #scale & rotate
-center = landmark[1,:]
-radius = np.linalg.norm(landmark[2,:] - landmark[1,:])
-scale = radius/np.linalg.norm(landmark0[2,:] - landmark0[1,:])
-cos = (landmark[2,0]-landmark[1,0])/radius
-sin = (landmark[2,1]-landmark[1,1])/radius
-alpha = scale * cos
-beta = scale * sin
-M = np.array([
-[alpha, beta, (1-alpha) * center[1] - beta * center[0]],
-[- beta, alpha, (benta * center[1] - (1-alpha) * center[0]
-])
-dst = cv2.warpAffine(result,M,(1084,750))
-
-
-#calculate slope of x, y
-
-#convert coordinates of answer marks along origin/slopex, slope y
+radius = np.linalg.norm(landmark[1,:] - landmark[0,:])
+scale = np.linalg.norm(guide[1,:] - guide[0,:])/radius
+cos = (landmark[1,1]-landmark[0,1])/radius
+theta = np.arccos(cos) / (2 * np.pi) * 360
+M = cv2.getRotationMatrix2D((guide[0,1],guide[0,0]),-theta,scale)
+resultFinal = cv2.warpAffine(resultShifted,M,(width,height))
 
 #judge answer 
  
-#makerを色々変えられるようにしてみる。
-#gimpでmakerを変えて、精度がよくなるようなマーカーを探す
