@@ -1,13 +1,20 @@
 # checkMark.py checks marks on the answer sheet. 
 
+import os
 import numpy as np
 import cv2
 from pdf2image import convert_from_path
 
 landmark = np.zeros((3,2))
 
+#フォルダ内のファイルのリストを取得
+files = os.listdir('./scanPDF')
+files_file = [f for f in files if os.path.isfile(os.path.join('./scanPDF', f))]
+
+infile = os.path.join('./scanPDF', files_file[0])
+
 #pdfを読み込み、opevCVで使えるarrayに変換
-imgAll = convert_from_path('scanImage/test4.pdf', dpi=100)
+imgAll = convert_from_path(infile, dpi=100)
 img = imgAll[0]    #pick first page up
 img = np.asarray(img)
 img = img.take([1,2,0], axis=2) #channel変換(GBR -> RGB)
@@ -97,7 +104,9 @@ answerMark = np.asarray(answerMark[:,1:3], dtype=np.int)
 
 judgeLine = 110
 
+print(infile)
 for i in range(0, answerMark.shape[0]):
-    print(resultFinal[answerMark[i,0], answerMark[i,1]])
     if resultFinal[answerMark[i,0], answerMark[i,1]] > judgeLine:
         answer[i][3] = 1
+    print(answer[i][0], ':', answer[i][3])
+
