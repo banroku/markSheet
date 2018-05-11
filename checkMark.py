@@ -88,6 +88,8 @@ def checkAnswer(img, marker, answerList, threshold=110):
     """
 
     markerCenter = np.asarray(marker.shape)//2
+    width = img.shape[1]
+    height = img.shape[0]
 
     #template matching 2回目 (回答読み取り用)
     resultFinal = cv2.matchTemplate(imgModified, marker, 0)
@@ -96,7 +98,7 @@ def checkAnswer(img, marker, answerList, threshold=110):
     [1, 0, markerCenter[1]] ,
     [0, 1, markerCenter[0]] ])
     resultFinal = cv2.warpAffine(resultFinal, M, (width, height))
-    
+
     #answerList のlistから、x,y座標だけを取り込む
     answerCoord = np.asarray(answerList)
     answerCoord = np.asarray(answerCoord[:,1:3], dtype=np.int)
@@ -109,6 +111,7 @@ def checkAnswer(img, marker, answerList, threshold=110):
             answerList[i][3] = 0
         print(answerList[i][0], ':', answerList[i][3])
 
+    return answerList
     #}}}
 
 if __name__ == '__main__':
@@ -126,13 +129,13 @@ if __name__ == '__main__':
         ['category1', 951, 42, 0],
         ['category2', 990, 42, 0],
         ['category3', 1030, 42, 0],
-        ['molding', 115, 688, 0],
-        ['processing', 223, 688, 0],
-        ['evaluation', 369, 688, 0],
-        ['data-analysis', 512, 688, 0], 
-        ['discussion', 680, 688, 0],
-        ['formula', 800, 688, 0],
-        ['synthesis', 950, 688, 0],
+        ['molding', 115, 668, 0],
+        ['processing', 223, 668, 0],
+        ['evaluation', 369, 668, 0],
+        ['data-analysis', 512, 668, 0], 
+        ['discussion', 680, 668, 0],
+        ['formula', 800, 668, 0],
+        ['synthesis', 950, 668, 0],
         ['CAE', 115, 708, 0], 
         ['others', 223, 708, 0],
     ]
@@ -152,6 +155,6 @@ if __name__ == '__main__':
         marker= cv2.imread('landmark.png', 0)
         imgModified = correctMisalign(img, marker, center, compus, scope = 100)
         print(infile)
-        checkAnswer(img, marker, answerList, threshold=110)
+        checkAnswer(imgModified, marker, answerList, threshold=110)
 
 # vim: set foldmethod=marker :
