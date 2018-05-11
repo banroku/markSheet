@@ -30,7 +30,7 @@ def readPDF(infile, width, grayscale=True):
     return img  
     #}}}
 
-def correctMisalign(img, marker, center, compus, scope=100)
+def correctMisalign(img, marker, center, compus, scope=100):
     """画像の位置ズレを調整 {{{
     並進ズレをcenterに揃え、回転ズレをcenter-compusに揃える
     img: 調整する画像
@@ -41,6 +41,8 @@ def correctMisalign(img, marker, center, compus, scope=100)
     """
 
     markerCenter = np.asarray(marker.shape)//2
+    guide = np.asarray([center, compus])
+    landmark = np.zeros(guide.shape)
     
     #template matching 1回目 (ズレ修正のためのlandmarkの読取り用) 
     result = cv2.matchTemplate(img, marker, 0)
@@ -51,64 +53,42 @@ def correctMisalign(img, marker, center, compus, scope=100)
     resultPadded = cv2.warpAffine(result, M, (width, height))
     
     mask = np.zeros(resultPadded.shape)
-    
-    guide = [center, compus]
 
-    for i in range(0, guide[2]):
+    for i in range(0, len(guide)):
         mask[:] = 0
-        mask_xfr = max(0, guide[i,0]-(scope+markerCenter[0]))
-        mask_xto = min(width, guide[i,0]+(scope+markerCenter[0]))
-        mask_yfr = max(0, guide[i,1]-(scope+markerCenter[1]))
-        mask_yto = min(width, guide[i,1]+(scope+markerCenter[1]))
+        mask_xfr = max(0, guide[i,1]-(scope+markerCenter[0]))
+        mask_xto = min(width, guide[i,1]+(scope+markerCenter[0]))
+        mask_yfr = max(0, guide[i,0]-(scope+markerCenter[1]))
+        mask_yto = min(width, guide[i,0]+(scope+markerCenter[1]))
         mask[mask_xfr:mask_xto, mask_yfr:mask_yto] = 255
         min_val, max_val, min_val, landmark[i,:] = cv2.minMaxLoc(np.multiply(resultPadded, mask))
-    
-    landmark = np.take(landmark, [1,0], axis=1) #x,yが逆転しているのを直す
-
     
     #ズレ修正1 (shift)
     shift = guide[0] - landmark[0] 
     M = np.float32([
-    [1, 0, shift[1]] ,
-    [0, 1, shift[0]] ])
+    [1, 0, shift[0]] ,
+    [0, 1, shift[1]] ])
     imgShifted = cv2.warpAffine(img, M, (width, height))
     
     #ズレ修正2 (scale & rotate)
     radius = np.linalg.norm(landmark[1,:] - landmark[0,:])
     scale = np.linalg.norm(guide[1,:] - guide[0,:])/radius
-    cos = (landmark[1,1]-landmark[0,1])/radius
+    cos = (landmark[1,0]-landmark[0,0])/radius
     theta = np.arccos(cos) / (2 * np.pi) * 360
-    M = cv2.getRotationMatrix2D((guide[0,1],guide[0,0]),-theta,scale)
+    M = cv2.getRotationMatrix2D((guide[0,0],guide[0,1]),-theta,scale)
     imgModified = cv2.warpAffine(imgShifted,M,(width,height))
     return imgModified
 
     #}}}
 
+def checkAnswer(img, marker, answerList, threshold=110):
+    """ checkAnswer checks answers according to #{{{
+    the coordinate of answerList.
+    answerList = [['answer name', x, y, '0/1'], ..., ]
+    """
 
-if __name__ == '__main__':
+    markerCenter = np.asarray(marker.shape)//2
 
-    landmark = np.zeros((3,2))
-    
-    #フォルダ内のファイルのリストを取得
-    files = os.listdir('./scanPDF')
-    files_file = [f for f in files if os.path.isfile(os.path.join('./scanPDF', f))]
-    
-    infile = os.path.join('./scanPDF', files_file[0])
-    width = 1084
-    img = readPDF(infile, width)
-    
-    width = img.shape[1]
-    height = img.shape[0]
-    
-    #center/compus座標の設定
-    center = [726, 31]
-    compus = [726, 1051]
-    
-    marker= cv2.imread('landmark.png', 0)
-    imgModified = correctMisalign(img, marker, center, compus, scope = 100)
-
-
-    ## module 3: check answer (img, marker, answerlist, threshold)
     #template matching 2回目 (回答読み取り用)
     resultFinal = cv2.matchTemplate(imgModified, marker, 0)
     resultFinal = (1-resultFinal/np.max(resultFinal))*255
@@ -117,32 +97,61 @@ if __name__ == '__main__':
     [0, 1, markerCenter[0]] ])
     resultFinal = cv2.warpAffine(resultFinal, M, (width, height))
     
-    #judge answer 
-    answer = [
-    ['category1', 42, 951, 0],
-    ['category2', 42, 990, 0],
-    ['category3', 42, 1030, 0],
-    ['molding', 668, 115, 0],
-    ['processing', 668, 223, 0],
-    ['evaluation', 668, 369, 0],
-    ['data-analysis', 668, 512, 0], 
-    ['discussion', 668, 680, 0],
-    ['formula', 668, 800, 0],
-    ['synthesis', 668, 950, 0],
-    ['CAE', 708, 115, 0], 
-    ['others', 708, 223, 0],
+    #answerList のlistから、x,y座標だけを取り込む
+    answerCoord = np.asarray(answerList)
+    answerCoord = np.asarray(answerCoord[:,1:3], dtype=np.int)
+    
+    for i in range(0, answerCoord.shape[0]):
+        if (resultFinal[answerCoord[i,1], answerCoord[i,0]] 
+            > threshold):
+            answerList[i][3] = 1
+        else:
+            answerList[i][3] = 0
+        print(answerList[i][0], ':', answerList[i][3])
+
+    #}}}
+
+if __name__ == '__main__':
+    """ scanImage/フォルダ内のすべてのファイルに対して、
+    回答のチェックを実施する
+    """
+    
+    #center/compus座標の設定
+    width = 1084
+    center = [31,  726]
+    compus = [1051, 726]
+    
+    #回答読み取り座標の設定
+    answerList = [
+        ['category1', 951, 42, 0],
+        ['category2', 990, 42, 0],
+        ['category3', 1030, 42, 0],
+        ['molding', 115, 688, 0],
+        ['processing', 223, 688, 0],
+        ['evaluation', 369, 688, 0],
+        ['data-analysis', 512, 688, 0], 
+        ['discussion', 680, 688, 0],
+        ['formula', 800, 688, 0],
+        ['synthesis', 950, 688, 0],
+        ['CAE', 115, 708, 0], 
+        ['others', 223, 708, 0],
     ]
+
+    #フォルダ内のファイルのリストを取得
+    files = os.listdir('./scanPDF')
+    files_file = [f for f in files if os.path.isfile(os.path.join('./scanPDF', f))]
     
-    answerMark = np.asarray(answer)
-    answerMark = np.asarray(answerMark[:,1:3], dtype=np.int)
-    
-    judgeLine = 110
-    
-    print(infile)
-    for i in range(0, answerMark.shape[0]):
-        if resultFinal[answerMark[i,0], answerMark[i,1]] > judgeLine:
-            answer[i][3] = 1
-        print(answer[i][0], ':', answer[i][3])
-    
-""" vim: set foldmethod=marker :
-"""
+    for i in range(0, len(files_file)):
+        infile = os.path.join('./scanPDF', files_file[i])
+        img = readPDF(infile, width)
+        
+        width = img.shape[1]
+        height = img.shape[0]
+        
+        #目印画像の設定
+        marker= cv2.imread('landmark.png', 0)
+        imgModified = correctMisalign(img, marker, center, compus, scope = 100)
+        print(infile)
+        checkAnswer(img, marker, answerList, threshold=110)
+
+# vim: set foldmethod=marker :
