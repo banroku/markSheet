@@ -1,29 +1,31 @@
 #!/usr/bin/python3
 import os
 import numpy as np
-import cv2
 from pdf2image import convert_from_path
+import cv2
 
 def readPDF(infile, width, grayscale=True):
-    """pdfを読み込み、opevCVで使えるarrayに変換。{{{
-    pdfが複数ページの場合は、1ページ目を保存する仕様。
+    """readPDF opens pdf as array to be hundled by opevCV. {{{
+    When the pdf file has multiple pages, 
+    automatically pick first page. 
+    infile: a pdf file to open
+    width: image width (pixel) of opened image
+    grayscale = Ture : convert image to grayscale
     """ 
-    # pdfを読み込む
 
+    #To open a pdf file.
     imgAllPages = convert_from_path(infile, dpi=100)
     img = imgAllPages[0]  #pick first page up
     img = np.asarray(img)
-    img = img.take([1,2,0], axis=2)  #channel変換(GBR -> RGB)
+    img = img.take([1,2,0], axis=2)  #change color ch. (GBR -> RGB)
     
-    # 幅が1084からずれていた場合、拡大or縮小する
-
+    #To scale image to designated width.
     if img.shape[1] != width:
         height = int(round(img.shape[0] / img.shape[1] * width))
         img = cv2.resize(img, (width, height), 
                          interpolation = cv2.INTER_CUBIC)
 
-    #グレイスケールに変換
-
+    #To convert image in grayscale. 
     if grayscale:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -31,20 +33,23 @@ def readPDF(infile, width, grayscale=True):
     #}}}
 
 def correctMisalign(img, marker, center, compus, scope=100):
-    """画像の位置ズレを調整 {{{
-    並進ズレをcenterに揃え、回転ズレをcenter-compusに揃える
-    img: 調整する画像
-    marker: 目印となる画像(円)。中心が画像の中央にくること。
-    center: [x, y]
-    compus: [x, y]
-    scope: 本来の目印からのズレの許容範囲
+    """correct misalignment/misscale of a image {{{
+    by using two markers on the image. 
+    First: To shift image according to center
+    Second: To rescale and rotate according to the distance/angle between center&compus
+    img: input image
+    marker: marker image to fit (circle). 
+            center of the cricle should be on the center of image. 
+    center: coordinate of the center point [x, y]
+    compus: coordinate of the compus point [x, y]
+    scope: distance to search marker points from where it should be. 
     """
 
     markerCenter = np.asarray(marker.shape)//2
     guide = np.asarray([center, compus])
     landmark = np.zeros(guide.shape)
     
-    #template matching 1回目 (ズレ修正のためのlandmarkの読取り用) 
+    #To run template matching to finder markers
     result = cv2.matchTemplate(img, marker, 0)
     result = (1-result/np.max(result))*255
     M = np.float32([
@@ -61,16 +66,17 @@ def correctMisalign(img, marker, center, compus, scope=100):
         mask_yfr = max(0, guide[i,0]-(scope+markerCenter[1]))
         mask_yto = min(width, guide[i,0]+(scope+markerCenter[1]))
         mask[mask_xfr:mask_xto, mask_yfr:mask_yto] = 255
-        min_val, max_val, min_val, landmark[i,:] = cv2.minMaxLoc(np.multiply(resultPadded, mask))
+        min_val, max_val, min_loc, landmark[i,:] = \
+            cv2.minMaxLoc(np.multiply(resultPadded, mask))
     
-    #ズレ修正1 (shift)
+    #To shift image
     shift = guide[0] - landmark[0] 
     M = np.float32([
     [1, 0, shift[0]] ,
     [0, 1, shift[1]] ])
     imgShifted = cv2.warpAffine(img, M, (width, height))
     
-    #ズレ修正2 (scale & rotate)
+    #To rescale & rotate image
     radius = np.linalg.norm(landmark[1,:] - landmark[0,:])
     scale = np.linalg.norm(guide[1,:] - guide[0,:])/radius
     cos = (landmark[1,0]-landmark[0,0])/radius
@@ -83,15 +89,18 @@ def correctMisalign(img, marker, center, compus, scope=100):
 
 def checkAnswer(img, marker, answerList, threshold=110):
     """ checkAnswer checks answers according to #{{{
-    the coordinate of answerList.
-    answerList = [['answer name', x, y, '0/1'], ..., ]
+    the coordinate in answerList.
+    img: input iamge
+    marker: image of answer marker
+    answerList = [['answer1', x, y, '0/1'], [...], ... ]
+    threshold: threshold to judge whether markers are filled or not
     """
 
     markerCenter = np.asarray(marker.shape)//2
     width = img.shape[1]
     height = img.shape[0]
 
-    #template matching 2回目 (回答読み取り用)
+    #To run template matching to find answer markers
     resultFinal = cv2.matchTemplate(imgModified, marker, 0)
     resultFinal = (1-resultFinal/np.max(resultFinal))*255
     M = np.float32([
@@ -99,10 +108,11 @@ def checkAnswer(img, marker, answerList, threshold=110):
     [0, 1, markerCenter[0]] ])
     resultFinal = cv2.warpAffine(resultFinal, M, (width, height))
 
-    #answerList のlistから、x,y座標だけを取り込む
+    #To get coordinate of answer marker from answerList.
     answerCoord = np.asarray(answerList)
     answerCoord = np.asarray(answerCoord[:,1:3], dtype=np.int)
     
+    #To judge each answer markers are filled or not.
     for i in range(0, answerCoord.shape[0]):
         if (resultFinal[answerCoord[i,1], answerCoord[i,0]] 
             > threshold):
@@ -115,16 +125,16 @@ def checkAnswer(img, marker, answerList, threshold=110):
     #}}}
 
 if __name__ == '__main__':
-    """ scanImage/フォルダ内のすべてのファイルに対して、
-    回答のチェックを実施する
+    """ __main__ runs readPDF/correctMisalign/checkAnswer seq 
+    for all files in the folder 'scanPDF'. 
     """
     
-    #center/compus座標の設定
+    #Definition of image width and coordinate of center/compus
     width = 1084
     center = [31,  726]
     compus = [1051, 726]
     
-    #回答読み取り座標の設定
+    #Definition of answer list and their coordinates
     answerList = [
         ['category1', 951, 42, 0],
         ['category2', 990, 42, 0],
@@ -140,9 +150,13 @@ if __name__ == '__main__':
         ['others', 223, 708, 0],
     ]
 
-    #フォルダ内のファイルのリストを取得
+    #To input marker image.
+    marker= cv2.imread('landmark.png', 0)
+
+    #To get file list in the folder 'scanPDF'.
     files = os.listdir('./scanPDF')
     files_file = [f for f in files if os.path.isfile(os.path.join('./scanPDF', f))]
+
     
     for i in range(0, len(files_file)):
         infile = os.path.join('./scanPDF', files_file[i])
@@ -151,9 +165,8 @@ if __name__ == '__main__':
         width = img.shape[1]
         height = img.shape[0]
         
-        #目印画像の設定
-        marker= cv2.imread('landmark.png', 0)
-        imgModified = correctMisalign(img, marker, center, compus, scope = 100)
+        imgModified = \
+            correctMisalign(img, marker, center, compus, scope = 100)
         print(infile)
         checkAnswer(imgModified, marker, answerList, threshold=110)
 
