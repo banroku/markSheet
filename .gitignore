@@ -1,4 +1,7 @@
 *.png
+!marker.png
 *.pdf
 *.jpg
 *.xcf
+*.swp
+result.txt

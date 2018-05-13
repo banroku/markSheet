@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import os
 import numpy as np
+import csv
 from pdf2image import convert_from_path
 import cv2
 
@@ -33,7 +34,7 @@ def readPDF(infile, width, grayscale=True):
     #}}}
 
 def correctMisalign(img, marker, center, compus, scope=100):
-    """correct misalignment/misscale of a image {{{
+    """correctMisalign corrects misalignment/misscale of a image {{{
     by using two markers on the image. 
     First: To shift image according to center
     Second: To rescale and rotate according to the distance/angle between center&compus
@@ -113,15 +114,15 @@ def checkAnswer(img, marker, answerList, threshold=110):
     answerCoord = np.asarray(answerCoord[:,1:3], dtype=np.int)
     
     #To judge each answer markers are filled or not.
+    answers = []
     for i in range(0, answerCoord.shape[0]):
         if (resultFinal[answerCoord[i,1], answerCoord[i,0]] 
             > threshold):
-            answerList[i][3] = 1
+            answers.append('1')
         else:
-            answerList[i][3] = 0
-        print(answerList[i][0], ':', answerList[i][3])
+            answers.append('0')
 
-    return answerList
+    return answers
     #}}}
 
 if __name__ == '__main__':
@@ -131,8 +132,8 @@ if __name__ == '__main__':
     
     #Definition of image width and coordinate of center/compus
     width = 1084
-    center = [31,  726]
-    compus = [1051, 726]
+    center = (31,  726)
+    compus = (1051, 726)
     
     #Definition of answer list and their coordinates
     answerList = [
@@ -151,13 +152,17 @@ if __name__ == '__main__':
     ]
 
     #To input marker image.
-    marker= cv2.imread('landmark.png', 0)
+    marker= cv2.imread('marker.png', 0)
 
     #To get file list in the folder 'scanPDF'.
     files = os.listdir('./scanPDF')
     files_file = [f for f in files if os.path.isfile(os.path.join('./scanPDF', f))]
 
-    
+    output = ['filename']
+    for i in range(0, len(answerList)):
+        output.append(answerList[i][0])
+    output = [output]
+
     for i in range(0, len(files_file)):
         infile = os.path.join('./scanPDF', files_file[i])
         img = readPDF(infile, width)
@@ -167,7 +172,15 @@ if __name__ == '__main__':
         
         imgModified = \
             correctMisalign(img, marker, center, compus, scope = 100)
-        print(infile)
-        checkAnswer(imgModified, marker, answerList, threshold=110)
+        print('now checking file "', infile, '" ...', sep='')
+        
+        answer = [infile]
+        answer.extend(checkAnswer(imgModified, marker, 
+                                  answerList, threshold=110))
+        output.append(answer)
+
+    with open('result.txt', 'w') as f:
+        writer = csv.writer(f, lineterminator='\n')
+        writer.writerows(output)
 
 # vim: set foldmethod=marker :
