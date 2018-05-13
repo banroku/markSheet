@@ -183,4 +183,5 @@ if __name__ == '__main__':
         writer = csv.writer(f, lineterminator='\n')
         writer.writerows(output)
 
+    print('checkMark finished. Results are saved in result.txt.')
 # vim: set foldmethod=marker :
