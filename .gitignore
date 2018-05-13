@@ -1,4 +1,8 @@
 *.png
+!marker.png
 *.pdf
+!sample-bubblesheet.pdf
 *.jpg
 *.xcf
+*.swp
+result.txt
